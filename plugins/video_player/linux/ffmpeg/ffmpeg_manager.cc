@@ -273,10 +273,10 @@ int FFMPEGManager::loop_internal() {
             break;
         }
 
-        for(ret = avcodec_receive_frame(dec_ctx, frame); ret >= 0; receive_frame()) {
-            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-                break;
-            } else if (ret < 0) {
+        for(ret = avcodec_receive_frame(dec_ctx, frame); 
+            ret >= 0 && !(ret == AVERROR(EAGAIN) || ret == AVERROR_EOF); 
+            ret = receive_frame()) {
+            if (ret < 0) {
                 av_log(NULL, AV_LOG_ERROR, "Error while receiving a frame from the decoder\n");
                 return ret;
             }
@@ -291,9 +291,8 @@ int FFMPEGManager::loop_internal() {
 
             /* pull filtered frames from the filtergraph */
             for(ret = av_buffersink_get_frame(buffersink_ctx, filt_frame); 
-                ret >= 0; ret = get_filter_frame()) {
-                if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-                    break;
+                ret >= 0 && !(ret == AVERROR(EAGAIN) || ret == AVERROR_EOF); 
+                ret = get_filter_frame()) {
                 if (ret < 0)
                     return ret;
                 //display_frame(filt_frame, buffersink_ctx->inputs[0]->time_base);
