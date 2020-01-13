@@ -1,0 +1,12 @@
+// This is a generated file; do not edit or check into version control.
+FLUTTER_ROOT=/home/frosty/flutter-stuff/flutter
+FLUTTER_APPLICATION_PATH=/home/frosty/flutter-stuff/plugins/packages/video_player/video_player/example
+FLUTTER_TARGET=lib/main.dart
+FLUTTER_BUILD_DIR=build
+SYMROOT=${SOURCE_ROOT}/../build/ios
+FLUTTER_FRAMEWORK_DIR=/home/frosty/flutter-stuff/engine/src/out/host_debug_unopt
+FLUTTER_BUILD_NAME=1.0.0
+FLUTTER_BUILD_NUMBER=1
+FLUTTER_ENGINE=/home/frosty/flutter-stuff/engine/src
+LOCAL_ENGINE=host_debug_unopt
+ARCHS=arm64
