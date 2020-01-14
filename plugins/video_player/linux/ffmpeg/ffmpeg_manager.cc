@@ -13,6 +13,9 @@ extern "C" {
 #include <libavutil/opt.h>
 }
 
+#undef av_err2str
+#define av_err2str(errnum) av_make_error_string((char*)__builtin_alloca(AV_ERROR_MAX_STRING_SIZE), AV_ERROR_MAX_STRING_SIZE, errnum)
+
 class FFMPEGManager
 {
 private:
@@ -24,6 +27,7 @@ private:
 
     AVFrame *frame;
     AVFrame *filt_frame;
+    int channels;
 
     int video_stream_index;
     int64_t last_pts;
@@ -37,6 +41,10 @@ private:
     int receive_frame();
     int get_filter_frame();
     int loop_internal();
+
+    // For testing purposes
+    void save_frame(const AVFrame *frame, AVRational time_base);
+
 public:
     FFMPEGManager();
     ~FFMPEGManager();
@@ -203,17 +211,17 @@ end:
 int FFMPEGManager::Init(const char* filename, AVPixelFormat pix_fmt, int width, int height) {
     int ret;
 
-    frame = av_frame_alloc();
-    filt_frame = av_frame_alloc();
-
-
     if ((ret = open_input_file(filename, pix_fmt)) >= 0) {
         char filter_descr[16];
         sprintf(filter_descr, "scale=%d:%d", width, height);
         ret = init_filters(filter_descr);
+        frame = av_frame_alloc();
+        filt_frame = av_frame_alloc();
     }
+    if (ret < 0)
+        return Close(ret);
 
-    return Close(ret);
+    return 0;
 }
 
 void FFMPEGManager::Free() {
@@ -295,7 +303,7 @@ int FFMPEGManager::loop_internal() {
                 ret = get_filter_frame()) {
                 if (ret < 0)
                     return ret;
-                //display_frame(filt_frame, buffersink_ctx->inputs[0]->time_base);
+                save_frame(filt_frame, buffersink_ctx->inputs[0]->time_base);
             }
         }
     }
@@ -310,3 +318,30 @@ int FFMPEGManager::Loop() {
 
 #endif
 
+void FFMPEGManager::save_frame(const AVFrame *frame, AVRational time_base)
+{
+    int x, y;
+    uint8_t *p0, *p;
+    int64_t delay;
+
+    if (frame->pts != AV_NOPTS_VALUE) {
+        if (last_pts != AV_NOPTS_VALUE) {
+            /* sleep roughly the right amount of time;
+             * usleep is in microseconds, just like AV_TIME_BASE. */
+            delay = av_rescale_q(frame->pts - last_pts,
+                                 time_base, AV_TIME_BASE_Q);
+            if (delay > 0 && delay < 1000000)
+                usleep(delay);
+        }
+        last_pts = frame->pts;
+    }
+
+    /* Trivial ASCII grayscale display. */
+    p0 = frame->data[0];
+    FILE *f;
+
+    f = fopen("test.ppm","w");
+    fprintf(f, "P6\n%d %d\n%d\n", frame->width, frame->height, 255);
+    fwrite(p0, 1, frame->linesize[0] * frame->height, f);
+    fclose(f);
+}
