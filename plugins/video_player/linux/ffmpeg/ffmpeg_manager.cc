@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <mutex>
+#include <shared_mutex>
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -32,6 +35,10 @@ private:
     int video_stream_index;
     int64_t last_pts;
 
+    mutable std::shared_mutex buffer_mutex;
+    uint8_t *buffer;
+    int width, height;    
+
     int init_fmt_context(const char *filename);
     int init_dec_context(AVPixelFormat pix_fmt);
     int open_input_file(const char *filename, AVPixelFormat pix_fmt);
@@ -42,18 +49,24 @@ private:
     int get_filter_frame();
     int loop_internal();
 
-    // For testing purposes
+    void frame_sleep(const AVFrame *frame, AVRational time_base);
     void save_frame(const AVFrame *frame, AVRational time_base);
+
+    // For testing purposes
+    void write_frame_to_file(const AVFrame *frame, AVRational time_base);
 
 public:
     FFMPEGManager();
     ~FFMPEGManager();
 
-    int Init(const char* filename, AVPixelFormat pix_fmt, int width, int height);
+    int Init(const char* filename, AVPixelFormat pix_fmt, int mwidth, int mheight);
     void Free();
     int Close(int ret);
-
     int Loop();
+
+    int Data(const uint8_t *out) const;
+    int Width() const { return width; }
+    int Height() const { return height; }
 };
 
 FFMPEGManager::FFMPEGManager()
@@ -73,6 +86,7 @@ FFMPEGManager::FFMPEGManager()
 
 FFMPEGManager::~FFMPEGManager()
 {
+    Free();
 }
 
 int FFMPEGManager::init_fmt_context(const char *filename) {
@@ -208,12 +222,14 @@ end:
     return ret;
 }
 
-int FFMPEGManager::Init(const char* filename, AVPixelFormat pix_fmt, int width, int height) {
+int FFMPEGManager::Init(const char* filename, AVPixelFormat pix_fmt, int mwidth, int mheight) {
     int ret;
 
     if ((ret = open_input_file(filename, pix_fmt)) >= 0) {
+        width = mwidth;
+        height = mheight;
         char filter_descr[16];
-        sprintf(filter_descr, "scale=%d:%d", width, height);
+        sprintf(filter_descr, "scale=%d:%d", mwidth, mheight);
         ret = init_filters(filter_descr);
         frame = av_frame_alloc();
         filt_frame = av_frame_alloc();
@@ -235,6 +251,10 @@ void FFMPEGManager::Free() {
     }
     if (&filt_frame) {
         av_frame_free(&filt_frame);
+    }
+    if (buffer) {
+        free(buffer);
+        buffer = NULL;
     }
 }
 
@@ -316,32 +336,45 @@ int FFMPEGManager::Loop() {
     return Close(ret);
 }
 
-#endif
-
-void FFMPEGManager::save_frame(const AVFrame *frame, AVRational time_base)
-{
-    int x, y;
-    uint8_t *p0, *p;
-    int64_t delay;
-
+void FFMPEGManager::frame_sleep(const AVFrame *frame, AVRational time_base) {
     if (frame->pts != AV_NOPTS_VALUE) {
         if (last_pts != AV_NOPTS_VALUE) {
             /* sleep roughly the right amount of time;
              * usleep is in microseconds, just like AV_TIME_BASE. */
-            delay = av_rescale_q(frame->pts - last_pts,
+            int64_t delay = av_rescale_q(frame->pts - last_pts,
                                  time_base, AV_TIME_BASE_Q);
             if (delay > 0 && delay < 1000000)
                 usleep(delay);
         }
         last_pts = frame->pts;
     }
+}
+
+void FFMPEGManager::save_frame(const AVFrame *frame, AVRational time_base) {
+    frame_sleep(frame, time_base);
+
+    std::unique_lock lock(buffer_mutex);
+    memcpy(buffer, frame->data[0], frame->linesize[0] * frame->height);
+}
+
+int FFMPEGManager::Data(uint8_t *out) {
+    int size = frame->linesize[0] * frame->height;
+    std::shared_lock lock(buffer_mutex);
+    memcpy(out, buffer, frame->linesize[0] * frame->height);
+    return size;
+}
+
+void FFMPEGManager::write_frame_to_file(const AVFrame *frame, AVRational time_base)
+{
+    frame_sleep(frame, time_base);
 
     /* Trivial ASCII grayscale display. */
-    p0 = frame->data[0];
     FILE *f;
-
     f = fopen("test.ppm","w");
     fprintf(f, "P6\n%d %d\n%d\n", frame->width, frame->height, 255);
-    fwrite(p0, 1, frame->linesize[0] * frame->height, f);
+    fwrite(frame->data[0], 1, frame->linesize[0] * frame->height, f);
     fclose(f);
 }
+
+#endif
+

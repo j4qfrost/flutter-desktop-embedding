@@ -72,6 +72,7 @@ class VideoPlayerPlugin : public flutter::Plugin {
   // The MethodChannel used for communication with the Flutter engine.
   std::unique_ptr<flutter::MethodChannel<EncodableValue>> channel_;
 
+  std::unordered_map<int64_t, Texture*> textures;
   // Private implementation.
 };
 
@@ -91,7 +92,7 @@ void VideoPlayerPlugin::RegisterWithRegistrar(
       [plugin_pointer = plugin.get()](const auto &call, auto result) {
         plugin_pointer->HandleMethodCall(call, std::move(result));
       });
-
+  texture_registrar = registar->textures();
   registrar->AddPlugin(std::move(plugin));
 }
 
@@ -121,8 +122,17 @@ void VideoPlayerPlugin::Create(const EncodableValue& arguments, FlutterResponder
   }
   string uri_val = uri.StringValue();
   
+  FFMPEGManager* fman = new FFMPEGManager();
+  Texture* texture = new FFMPEGTexture(fman);
 
-  result->Success();
+  int64_t texture_id = texture_registrar->RegisterTexture(texture);
+  textures.insert({texture_id, texture});
+
+  EncodableMap encodables = {
+    {EncodableValue("textureId"), EncodableValue(texture_id)}
+  };
+
+  result->Success(EncodableValue(encodables));
 }
 
 void VideoPlayerPlugin::Play(const EncodableValue& arguments, FlutterResponder result) {
