@@ -1,6 +1,6 @@
 // This is a generated file; do not edit or check into version control.
 FLUTTER_ROOT=/home/frosty/flutter-stuff/flutter
-FLUTTER_APPLICATION_PATH=/home/frosty/flutter-stuff/plugins/packages/video_player/video_player/example
+FLUTTER_APPLICATION_PATH=/home/frosty/flutter-stuff/flutter-desktop-embedding/plugins/video_player/example
 FLUTTER_TARGET=lib/main.dart
 FLUTTER_BUILD_DIR=build
 SYMROOT=${SOURCE_ROOT}/../build/ios

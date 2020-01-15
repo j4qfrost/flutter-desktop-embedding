@@ -7,6 +7,8 @@ homepage: https://github.com/flutter/plugins/tree/master/packages/video_player/v
 flutter:
   plugin:
     platforms:
+      linux:
+        pluginClass: VideoPlayerPlugin
       android:
         package: io.flutter.plugins.videoplayer
         pluginClass: VideoPlayerPlugin

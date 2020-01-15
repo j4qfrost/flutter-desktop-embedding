@@ -19,6 +19,8 @@ extern "C" {
 #undef av_err2str
 #define av_err2str(errnum) av_make_error_string((char*)__builtin_alloca(AV_ERROR_MAX_STRING_SIZE), AV_ERROR_MAX_STRING_SIZE, errnum)
 
+void NullFunc() {};
+
 class FFMPEGManager
 {
 private:
@@ -30,14 +32,15 @@ private:
 
     AVFrame *frame;
     AVFrame *filt_frame;
-    int channels;
 
     int video_stream_index;
     int64_t last_pts;
 
     mutable std::shared_mutex buffer_mutex;
     uint8_t *buffer;
-    int width, height;    
+    int width, height;
+
+    bool running;  
 
     int init_fmt_context(const char *filename);
     int init_dec_context(AVPixelFormat pix_fmt);
@@ -47,7 +50,7 @@ private:
     int read_frame_to_packet(AVPacket* packet);
     int receive_frame();
     int get_filter_frame();
-    int loop_internal();
+    int loop_internal(std::function<void()> callback);
 
     void frame_sleep(const AVFrame *frame, AVRational time_base);
     void save_frame(const AVFrame *frame, AVRational time_base);
@@ -62,9 +65,9 @@ public:
     int Init(const char* filename, AVPixelFormat pix_fmt, int mwidth, int mheight);
     void Free();
     int Close(int ret);
-    int Loop();
+    int Loop(std::function<void()> callback);
 
-    int Data(const uint8_t *out) const;
+    int Data(uint8_t *out) const;
     int Width() const { return width; }
     int Height() const { return height; }
 };
@@ -82,6 +85,8 @@ FFMPEGManager::FFMPEGManager()
 
     video_stream_index = -1;
     last_pts = AV_NOPTS_VALUE;
+
+    running = false;
 }
 
 FFMPEGManager::~FFMPEGManager()
@@ -242,14 +247,14 @@ int FFMPEGManager::Init(const char* filename, AVPixelFormat pix_fmt, int mwidth,
 
 void FFMPEGManager::Free() {
     avfilter_graph_free(&filter_graph);
-    if (&dec_ctx) {
+    if (dec_ctx) {
         avcodec_free_context(&dec_ctx);
     }
     avformat_close_input(&fmt_ctx);
-    if (&frame) {
+    if (frame) {
         av_frame_free(&frame);
     }
-    if (&filt_frame) {
+    if (filt_frame) {
         av_frame_free(&filt_frame);
     }
     if (buffer) {
@@ -282,7 +287,7 @@ int FFMPEGManager::get_filter_frame() {
     return av_buffersink_get_frame(buffersink_ctx, filt_frame);
 }
 
-int FFMPEGManager::loop_internal() {
+int FFMPEGManager::loop_internal(std::function<void()> callback) {
     AVPacket packet;
     /* read all packets */
     int ret = av_read_frame(fmt_ctx, &packet);
@@ -324,14 +329,21 @@ int FFMPEGManager::loop_internal() {
                 if (ret < 0)
                     return ret;
                 save_frame(filt_frame, buffersink_ctx->inputs[0]->time_base);
+                callback();
             }
         }
     }
     return 0;
 }
 
-int FFMPEGManager::Loop() {
-    int ret = loop_internal();
+int FFMPEGManager::Loop(std::function<void()> callback = NullFunc) {
+    if (running) {
+        printf("Manager already looping.");
+        return 0;
+    }
+    running = true;
+
+    int ret = loop_internal(callback);
 
     return Close(ret);
 }
@@ -357,7 +369,7 @@ void FFMPEGManager::save_frame(const AVFrame *frame, AVRational time_base) {
     memcpy(buffer, frame->data[0], frame->linesize[0] * frame->height);
 }
 
-int FFMPEGManager::Data(uint8_t *out) {
+int FFMPEGManager::Data(uint8_t *out) const {
     int size = frame->linesize[0] * frame->height;
     std::shared_lock lock(buffer_mutex);
     memcpy(out, buffer, frame->linesize[0] * frame->height);

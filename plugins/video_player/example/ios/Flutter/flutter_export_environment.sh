@@ -1,7 +1,7 @@
 #!/bin/sh
 # This is a generated file; do not edit or check into version control.
 export "FLUTTER_ROOT=/home/frosty/flutter-stuff/flutter"
-export "FLUTTER_APPLICATION_PATH=/home/frosty/flutter-stuff/plugins/packages/video_player/video_player/example"
+export "FLUTTER_APPLICATION_PATH=/home/frosty/flutter-stuff/flutter-desktop-embedding/plugins/video_player/example"
 export "FLUTTER_TARGET=lib/main.dart"
 export "FLUTTER_BUILD_DIR=build"
 export "SYMROOT=${SOURCE_ROOT}/../build/ios"

@@ -4,10 +4,12 @@
 #include <flutter/texture_registrar.h>
 #include "ffmpeg_manager.cc"
 
+using flutter::Texture;
+
 class FFMPEGTexture : public Texture 
 {
 private:
-    FFMPEGManager* manager;
+    FFMPEGManager* source;
 public:
     FFMPEGTexture(FFMPEGManager* man);
     virtual ~FFMPEGTexture();
@@ -17,21 +19,24 @@ public:
 
 FFMPEGTexture::FFMPEGTexture(FFMPEGManager* man)
 {
-    manager = man;
+    source = man;
 }
 
 FFMPEGTexture::~FFMPEGTexture()
 {
-    delete manager;
-    manager = NULL;
+    delete source;
+    source = NULL;
 }
 
 const PixelBuffer* FFMPEGTexture::CopyPixelBuffer(size_t width, size_t height) {
-    PixelBuffer pb;
-    manager->Data(pb.buffer);
-    pb.width = manager->Width();
-    pb.height = manager->Height();
-    return &pb;
+    PixelBuffer* pb = new PixelBuffer();
+    pb->width = source->Width();
+    pb->height = source->Height();
+
+    uint8_t buf[source->Width() * source->Height() * 4];
+    source->Data(buf);
+    pb->buffer = buf;
+    return pb;
 }
 
 #endif
