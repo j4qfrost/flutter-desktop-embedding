@@ -38,6 +38,7 @@ private:
 
     mutable std::shared_mutex buffer_mutex;
     uint8_t *buffer;
+    double current_time;
     int width, height;
 
     bool running;  
@@ -87,6 +88,7 @@ FFMPEGManager::FFMPEGManager()
     last_pts = AV_NOPTS_VALUE;
 
     running = false;
+    current_time = 0.0;
 }
 
 FFMPEGManager::~FFMPEGManager()
@@ -258,7 +260,7 @@ void FFMPEGManager::Free() {
         av_frame_free(&filt_frame);
     }
     if (buffer) {
-        free(buffer);
+        delete [] buffer;
         buffer = NULL;
     }
 }
@@ -267,7 +269,6 @@ int FFMPEGManager::Close(int ret) {
     Free();
     if (ret < 0 && ret != AVERROR_EOF) {
         fprintf(stderr, "Error occurred: %s\n", av_err2str(ret));
-        exit(1);
     }
     return 0;
 }
@@ -338,7 +339,7 @@ int FFMPEGManager::loop_internal(std::function<void()> callback) {
 
 int FFMPEGManager::Loop(std::function<void()> callback = NullFunc) {
     if (running) {
-        printf("Manager already looping.");
+        printf("Manager already looping.\n");
         return 0;
     }
     running = true;
@@ -364,15 +365,19 @@ void FFMPEGManager::frame_sleep(const AVFrame *frame, AVRational time_base) {
 
 void FFMPEGManager::save_frame(const AVFrame *frame, AVRational time_base) {
     frame_sleep(frame, time_base);
+    int size = frame->linesize[0] * frame->height;
 
     std::unique_lock lock(buffer_mutex);
-    memcpy(buffer, frame->data[0], frame->linesize[0] * frame->height);
+    current_time = double(time_base.num) / double(time_base.den) * double(last_pts);
+    free(buffer);
+    buffer = (uint8_t*)malloc(size);
+    memcpy(buffer, std::move(frame->data[0]), size);
 }
 
 int FFMPEGManager::Data(uint8_t *out) const {
     int size = frame->linesize[0] * frame->height;
     std::shared_lock lock(buffer_mutex);
-    memcpy(out, buffer, frame->linesize[0] * frame->height);
+    memcpy(out, buffer, size);
     return size;
 }
 

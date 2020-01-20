@@ -30,6 +30,8 @@ using std::endl;
 #include <flutter/plugin_registrar_glfw.h>
 #include <flutter/texture_registrar.h>
 
+#include <flutter_messenger.h>
+
 #include "ffmpeg/ffmpeg_manager.cc"
 #include "ffmpeg/ffmpeg_texture.cc"
 
@@ -38,6 +40,7 @@ namespace plugins_video_player {
 namespace {
 // See video_player.dart for documentation.
 const char kChannelName[] = "flutter.io/videoPlayer";
+const char kTextureIdFormat[] = "%s/videoEvents%ld";
 const char kInitMethod[] = "init";
 const char kCreateMethod[] = "create";
 const char kPlayMethod[] = "play";
@@ -86,6 +89,7 @@ class VideoPlayerPlugin : public flutter::Plugin {
 
   static flutter::TextureRegistrar* texture_registrar;
   static flutter::BinaryMessenger* messenger;
+  static flutter::FlutterEngine* engine;
 
   std::unordered_map<int64_t, FFMPEGManager*>* managers_by_texture_id;
   std::unordered_map<FFMPEGManager*, std::vector<int64_t>*>* texture_ownership;
@@ -182,7 +186,7 @@ void VideoPlayerPlugin::Create(const EncodableValue& arguments, std::unique_ptr<
   owner->second->push_back(texture_id);
 
   char channel_name[256];
-  sprintf(channel_name, "%s/videoEvents%ld", kChannelName, texture_id);
+  sprintf(channel_name, kTextureIdFormat, kChannelName, texture_id);
   auto channel = std::make_unique<FlutterMethdodChannelEV>(
       messenger, channel_name,
       &flutter::StandardMethodCodec::GetInstance());
@@ -206,11 +210,18 @@ void VideoPlayerPlugin::Play(const EncodableValue& arguments, std::unique_ptr<Fl
   FFMPEGManager *fman = managers_by_texture_id->find(texture_id)->second;
   std::vector<int64_t> *texture_ids = texture_ownership->find(fman)->second;
 
-  std::thread t(&FFMPEGManager::Loop, fman, [texture_ids, tr=std::move(texture_registrar)]() {
+  std::thread t(&FFMPEGManager::Loop, fman, [texture_ids]() {
     for (auto &&id : *texture_ids)
     {
-      tr->MarkTextureFrameAvailable(id);
-      printf("asdad");
+      char channel_name[256];
+      sprintf(channel_name, kTextureIdFormat, kChannelName, id);
+      EncodableMap encodables = {
+        {EncodableValue("method"), EncodableValue("newFrame")},
+      };
+      EncodableValue value(encodables);
+      std::unique_ptr<std::vector<uint8_t>> message = flutter::StandardMethodCodec::GetInstance().EncodeSuccessEnvelope(&value);
+      FlutterDesktopMessengerSend(reinterpret_cast<FlutterDesktopMessengerRef>(messenger), channel_name, std::move(&(*message)[0]), message->size());
+      // messenger->Send(channel_name, std::move(&(*message)[0]), message->size());
     }
   });
   
@@ -223,7 +234,8 @@ void VideoPlayerPlugin::Pause(const EncodableValue& arguments, std::unique_ptr<F
 }
 
 void VideoPlayerPlugin::Position(const EncodableValue& arguments, std::unique_ptr<FlutterResponderEV> result) {
-  result->Success();
+  EncodableValue value(0);
+  result->Success(&value);
 }
 
 void VideoPlayerPlugin::Dispose(const EncodableValue& arguments, std::unique_ptr<FlutterResponderEV> result) {
@@ -250,6 +262,10 @@ void VideoPlayerPlugin::HandleListener(
 
     messenger->Send(channel_name, std::move(&(*message)[0]), message->size());
 
+    result->Success();
+  } else if (method_name.compare("newFrame") == 0) {
+    int64_t texture_id = GrabEncodableValueFromArgs(*method_call.arguments(), "textureId").LongValue();
+    texture_registrar->MarkTextureFrameAvailable(texture_id);
     result->Success();
   } else if (method_name.compare("cancel") == 0) {
     result->Success();
